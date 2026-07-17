@@ -1,42 +1,85 @@
-\# Cloud-Native Bus Booking Portal 🚌
+# Bus Booking Application — AWS EC2 + RDS + ALB
 
+A full-stack bus ticket booking system deployed on traditional AWS infrastructure (EC2 + RDS), built as a capstone project for the AWS with Python certification course at Symbiosis.
 
+## Architecture
 
-A full-stack, cloud-native bus reservation system deployed on AWS. This capstone project demonstrates a production-ready web architecture using a decoupled frontend/backend and a relational cloud database.
+```
+Browser → ALB → EC2 (Flask app via Gunicorn + Nginx) → RDS (MySQL)
+```
 
+- **Flask** — REST API serving bus search and booking operations
+- **Flask-SQLAlchemy** — ORM layer mapping Python classes to MySQL tables
+- **Amazon RDS (MySQL)** — relational database storing buses, trips, and bookings
+- **EC2** — hosts the Flask app, served via Gunicorn behind Nginx, managed by systemd
+- **Application Load Balancer (ALB)** — routes public HTTP traffic to the EC2 instance, health-checks `/health`
+- **Security groups** — layered access: ALB accepts public traffic, EC2 only accepts traffic from the ALB, RDS only accepts traffic from EC2
 
+## Data model
 
-\## 🏗️ System Architecture
+**buses** — the fleet
+- `bus_id`, `bus_number`, `bus_name`, `bus_type`, `total_seats`
 
-\*\*Browser → GitHub Pages → AWS ALB → EC2 (Gunicorn + Nginx) → Flask API → AWS RDS (MySQL)\*\*
+**trips** — a specific bus running a specific route on a specific date
+- `trip_id`, `bus_id` (FK), `source`, `destination`, `travel_date`, `departure_time`, `arrival_time`, `price`, `seats_available`
 
+**bookings** — a passenger's reservation on a trip
+- `booking_id`, `trip_id` (FK), `passenger_name`, `passenger_email`, `passenger_phone`, `seats_booked`, `total_amount`, `booking_status`, `created_at`
 
+## API endpoints
 
-\* \*\*Frontend:\*\* HTML5 / CSS3 / JavaScript (Hosted on GitHub Pages)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Health check, used by the ALB target group |
+| GET | `/buses` | List all buses |
+| GET | `/trips` | Search trips — query params: `source`, `destination`, `date` |
+| GET | `/trips/<trip_id>` | Get a single trip's details |
+| POST | `/bookings` | Create a booking — validates seat availability, decrements `seats_available` |
+| GET | `/bookings/<booking_id>` | Look up a booking confirmation |
+| DELETE | `/bookings/<booking_id>` | Cancel a booking — restores seat availability |
 
-\* \*\*Backend:\*\* Python 3 / Flask / SQLAlchemy
+## Running locally
 
-\* \*\*Database:\*\* AWS RDS (MySQL)
+```bash
+python -m venv venv
+source venv/Scripts/activate    # Windows Git Bash
+pip install -r requirements.txt
+```
 
-\* \*\*Compute:\*\* AWS EC2 (Ubuntu) running Gunicorn \& Nginx
+Create a `.env` file with your RDS connection details:
 
-\* \*\*Networking:\*\* AWS Application Load Balancer (ALB) across multiple Availability Zones
+```
+DB_HOST=your-rds-endpoint
+DB_USER=admin
+DB_PASSWORD=your-password
+DB_NAME=busbooking
+```
 
+Then:
 
+```bash
+python seed.py       # populates sample buses/trips
+python app.py         # runs on http://localhost:5000
+```
 
-\## ✨ Core Features
+## Deploying
 
-\* \*\*Live Inventory Search:\*\* Queries the RDS MySQL database for available routes in real-time.
+1. Create an RDS MySQL instance (`db.t3.micro`, not publicly accessible)
+2. Launch an EC2 instance, install dependencies, clone this repo
+3. Set environment variables (`.env`) with the RDS endpoint and credentials
+4. Run the app with Gunicorn behind Nginx, managed via systemd
+5. Create a target group pointing at the EC2 instance, health check path `/health`
+6. Create an internet-facing ALB with a listener forwarding to the target group
 
-\* \*\*Interactive Seat Mapping:\*\* Dynamically generates a 40-seat grid, locking unavailable seats based on live DB metrics.
+## Project structure
 
-\* \*\*Stateful Booking:\*\* Deducts available seats atomically upon booking confirmation.
-
-\* \*\*Passenger Authentication:\*\* Captures local user session details to attach real passenger data to API payloads.
-
-
-
-\## 🚀 Deployment
-
-The backend REST API is hosted on an AWS EC2 instance as a background `systemd` service, placed behind an internet-facing Application Load Balancer. The frontend is a static Single Page Application (SPA) deployed via GitHub Pages, calling the AWS ALB endpoint directly.
-
+```
+.
+├── app.py              # Flask API and routes
+├── models.py           # SQLAlchemy table definitions
+├── config.py            # Loads .env and builds the DB connection string
+├── seed.py              # Populates sample data
+├── requirements.txt     # Python dependencies
+├── index.html           # Static frontend dashboard
+└── .gitignore
+```
